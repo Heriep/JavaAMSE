@@ -8,7 +8,7 @@ import android.graphics.PathMeasure;
 import android.graphics.Point;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
-import android.view.animation.LinearInterpolator;
+import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.ImageView;
 
 import androidx.activity.EdgeToEdge;
@@ -23,7 +23,7 @@ public class MainActivity extends AppCompatActivity {
 
     private int screenWidth;
     private int screenHeight;
-    private Random random = new Random();
+    private final Random random = new Random();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,13 +56,14 @@ public class MainActivity extends AppCompatActivity {
     private void animateAsteroid(ImageView asteroid) {
         final Point[] currentStartPoint = {getRandomPoint()};
         final Point[] currentEndPoint = {getRandomPoint()};
-        final Path[] currentPath = {createRandomPath(currentStartPoint[0], currentEndPoint[0])};
+        final Path[] currentPath = {createSmoothRandomPath(currentStartPoint[0], currentEndPoint[0])};
         final PathMeasure[] pathMeasure = {new PathMeasure(currentPath[0], false)};
         final float[] length = {pathMeasure[0].getLength()};
+        final int[] currentDuration = {random.nextInt(3000) + 4000};
 
         ValueAnimator animator = ValueAnimator.ofFloat(0f, length[0]);
-        animator.setDuration(random.nextInt(3000) + 6000); // Random duration between 2 and 5 seconds
-        animator.setInterpolator(new LinearInterpolator()); // Linear velocity
+        animator.setDuration(currentDuration[0]);
+        animator.setInterpolator(new AccelerateDecelerateInterpolator());
         animator.addUpdateListener(animation -> {
             float distance = (float) animation.getAnimatedValue();
             float[] aCoordinates = new float[2];
@@ -77,11 +78,18 @@ public class MainActivity extends AppCompatActivity {
                 // Reset the path to create a new random path
                 currentStartPoint[0] = currentEndPoint[0];
                 currentEndPoint[0] = getRandomPoint();
-                currentPath[0] = createRandomPath(currentStartPoint[0], currentEndPoint[0]);
+                currentPath[0] = createSmoothRandomPath(currentStartPoint[0], currentEndPoint[0]);
                 pathMeasure[0].setPath(currentPath[0], false);
                 length[0] = pathMeasure[0].getLength();
                 animator.setFloatValues(0f, length[0]);
-                animator.setDuration(random.nextInt(3000) + 6000); // Random duration
+                int newDuration = random.nextInt(3000) + 4000;
+                ValueAnimator durationAnimator = ValueAnimator.ofInt(currentDuration[0], newDuration);
+                durationAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+                durationAnimator.addUpdateListener(animation1 -> {
+                    animator.setDuration((int) animation1.getAnimatedValue());
+                });
+                durationAnimator.start();
+                currentDuration[0] = newDuration;
                 animator.start();
             }
         });
@@ -93,20 +101,15 @@ public class MainActivity extends AppCompatActivity {
         animator.start();
     }
 
-    private Path createRandomPath(Point startPoint, Point endPoint) {
+    private Path createSmoothRandomPath(Point startPoint, Point endPoint) {
         Path path = new Path();
         path.moveTo(startPoint.x, startPoint.y);
 
-        // Add a random number of intermediate points
-        int numIntermediatePoints = random.nextInt(3) + 1; // 1 to 3 intermediate points
-        Point previousPoint = startPoint;
-        for (int i = 0; i < numIntermediatePoints; i++) {
-            Point intermediatePoint = getRandomPoint();
-            path.quadTo(previousPoint.x, previousPoint.y, intermediatePoint.x, intermediatePoint.y);
-            previousPoint = intermediatePoint;
-        }
+        Point controlPoint1 = getRandomPoint();
+        Point controlPoint2 = getRandomPoint();
 
-        path.lineTo(endPoint.x, endPoint.y);
+        path.cubicTo(controlPoint1.x, controlPoint1.y, controlPoint2.x, controlPoint2.y, endPoint.x, endPoint.y);
+
         return path;
     }
 

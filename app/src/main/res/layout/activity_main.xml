@@ -24,31 +24,59 @@
         android:layout_width="100dp"
         android:layout_height="100dp"
         app:srcCompat="@drawable/asteroid1"
-        tools:layout_editor_absoluteX="111dp"
-        tools:layout_editor_absoluteY="96dp" />
+        tools:layout_editor_absoluteX="0dp"
+        tools:layout_editor_absoluteY="16dp" />
 
     <ImageView
         android:id="@+id/Asteroid2"
         android:layout_width="100dp"
         android:layout_height="100dp"
         app:srcCompat="@drawable/asteroid2"
-        tools:layout_editor_absoluteX="259dp"
-        tools:layout_editor_absoluteY="185dp" />
+        tools:layout_editor_absoluteX="100dp"
+        tools:layout_editor_absoluteY="16dp" />
 
     <ImageView
         android:id="@+id/Asteroid3"
         android:layout_width="100dp"
         android:layout_height="100dp"
         app:srcCompat="@drawable/asteroid3"
-        tools:layout_editor_absoluteX="68dp"
-        tools:layout_editor_absoluteY="256dp" />
+        tools:layout_editor_absoluteX="211dp"
+        tools:layout_editor_absoluteY="16dp" />
 
     <ImageView
         android:id="@+id/Asteroid4"
         android:layout_width="100dp"
         android:layout_height="100dp"
         app:srcCompat="@drawable/asteroid4"
-        tools:layout_editor_absoluteX="236dp"
-        tools:layout_editor_absoluteY="356dp" />
+        tools:layout_editor_absoluteX="311dp"
+        tools:layout_editor_absoluteY="16dp" />
+
+    <ImageView
+        android:id="@+id/Pad_exterior"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="30dp"
+        app:layout_constraintBottom_toBottomOf="@+id/Background"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:srcCompat="@drawable/pad_exterior" />
+
+    <ImageView
+        android:id="@+id/Pad_center"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toBottomOf="@+id/Pad_exterior"
+        app:layout_constraintEnd_toEndOf="@+id/Pad_exterior"
+        app:layout_constraintStart_toStartOf="@+id/Pad_exterior"
+        app:layout_constraintTop_toTopOf="@+id/Pad_exterior"
+        app:srcCompat="@drawable/pad_center" />
+
+    <ImageView
+        android:id="@+id/Tie"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        app:srcCompat="@drawable/tie"
+        tools:layout_editor_absoluteX="155dp"
+        tools:layout_editor_absoluteY="190dp" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
