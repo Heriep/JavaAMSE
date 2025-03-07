@@ -1,28 +1,30 @@
 package com.example.javaamse;
 
-import static com.example.javaamse.R.id.Pad_exterior;
-
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.graphics.Path;
 import android.graphics.PathMeasure;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.os.Bundle;
-import android.util.DisplayMetrics;
-import android.view.animation.AccelerateDecelerateInterpolator;
-import android.widget.ImageView;
-
 import android.os.Handler;
+import android.os.Looper;
+import android.util.DisplayMetrics;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
-
-import android.content.Intent;
+import android.view.ViewGroup;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.widget.Button;
+import android.widget.ImageView;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -31,22 +33,38 @@ import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
 
+    // Constants
+    private static final float COLLISION_THRESHOLD = 0.3f;
+    private static final int COLLISION_CHECK_INTERVAL = 10; // milliseconds
+    private static final int TIE_FIGHTER_MOVEMENT_INTERVAL = 10; // milliseconds
+    private static final float TIE_FIGHTER_SPEED = 10.0f;
+    private static final int MIN_ASTEROID_ANIMATION_DURATION = 4000;
+    private static final int ADDITIONAL_ASTEROID_ANIMATION_DURATION = 3000;
+    private static final int EXPLOSION_ANIMATION_DURATION = 500;
+    private final Random random = new Random();
+    // Handlers and Runnables
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    // Screen dimensions
     private int screenWidth;
     private int screenHeight;
-    private final Random random = new Random();
-
+    // UI Elements
     private ImageView joystickPad;
     private ImageView tieFighterImageView;
     private ImageView joystickBase;
-    private Handler handlerForMovingTie;
-    private Runnable movingTie;
+    private ConstraintLayout mainLayout;
+    private View gameOverLayout;
+    // Joystick properties
     private boolean joystickIsPressed = false;
     private float joystickCenterX;
     private float joystickCenterY;
     private float maxJoystickOffset;
-    private Handler collisionHandler;
+    // Game state
+    private boolean isGameActive = true;
+    private Runnable movingTieRunnable;
     private Runnable collisionRunnable;
 
+    // Asteroid array for easier management
+    private ImageView[] asteroids;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -54,118 +72,163 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
+        setupWindowInsets();
+        initializeScreenDimensions();
+        initializeGameElements();
+        setupJoystick();
+        startCollisionDetection();
+        startAsteroidAnimations();
+    }
+
+    private void setupWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
+    }
 
-        // Get screen dimensions
+    private void initializeScreenDimensions() {
         DisplayMetrics displayMetrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getRealMetrics(displayMetrics);
         screenWidth = displayMetrics.widthPixels;
         screenHeight = displayMetrics.heightPixels;
+    }
 
-        ImageView asteroid1 = findViewById(R.id.Asteroid1);
-        ImageView asteroid2 = findViewById(R.id.Asteroid2);
-        ImageView asteroid3 = findViewById(R.id.Asteroid3);
-        ImageView asteroid4 = findViewById(R.id.Asteroid4);
+    private void initializeGameElements() {
+        mainLayout = findViewById(R.id.main);
 
+        // Initialize game elements
         joystickPad = findViewById(R.id.Pad_center);
         tieFighterImageView = findViewById(R.id.Tie);
         joystickBase = findViewById(R.id.Pad_exterior);
 
-        // Set initial position of the Tie Fighter to the top center of the screen
-        tieFighterImageView.setX(0);
-        tieFighterImageView.setY(- screenHeight / 3f);
+        // Initialize asteroid array
+        asteroids = new ImageView[4];
+        asteroids[0] = findViewById(R.id.Asteroid1);
+        asteroids[1] = findViewById(R.id.Asteroid2);
+        asteroids[2] = findViewById(R.id.Asteroid3);
+        asteroids[3] = findViewById(R.id.Asteroid4);
 
-        // Calculate the center of the joystick base
+        // Set initial position of the Tie Fighter
+        tieFighterImageView.setX(0);
+        tieFighterImageView.setY(-screenHeight / 3f);
+
+        // Calculate joystick center
         joystickBase.post(() -> {
             joystickCenterX = joystickBase.getX() + joystickBase.getWidth() / 2f;
             joystickCenterY = joystickBase.getY() + joystickBase.getHeight() / 2f;
             maxJoystickOffset = joystickBase.getWidth() / 2f;
         });
+    }
 
-        collisionHandler = new Handler();
-        collisionRunnable = new Runnable() {
+    @SuppressLint("ClickableViewAccessibility")
+    private void setupJoystick() {
+        // Initialize the movement runnable
+        movingTieRunnable = new Runnable() {
             @Override
             public void run() {
-                // Détection de collision
-                if (isCollision(tieFighterImageView, asteroid1, 0.3f)) {
-                    handleCollision(tieFighterImageView);
-                } else if (isCollision(tieFighterImageView, asteroid2, 0.3f)) {
-                    handleCollision(tieFighterImageView);
-                } else if (isCollision(tieFighterImageView, asteroid3, 0.3f)) {
-                    handleCollision(tieFighterImageView);
-                } else if (isCollision(tieFighterImageView, asteroid4, 0.3f)) {
-                    handleCollision(tieFighterImageView);
-                }
+                if (!isGameActive) return;
 
-                // Planifier la prochaine vérification de collision
-                collisionHandler.postDelayed(this, 10); // Vérifier toutes les 10 ms (ajuster si nécessaire)
-            }
-        };
-        collisionHandler.post(collisionRunnable);
-
-        handlerForMovingTie = new Handler();
-        movingTie = new Runnable() {
-            @Override
-            public void run() {
-                // Calculate the direction and speed based on the joystick position
+                // Calculate movement based on joystick position
                 float offsetX = joystickPad.getX() + joystickPad.getWidth() / 2f - joystickCenterX;
                 float offsetY = joystickPad.getY() + joystickPad.getHeight() / 2f - joystickCenterY;
 
-                // Normalize the offset to a range of -1 to 1
+                // Normalize offset
                 float normalizedOffsetX = offsetX / maxJoystickOffset;
                 float normalizedOffsetY = offsetY / maxJoystickOffset;
 
-                // Adjust the speed based on how far the joystick is moved
-                float speed = 5f; // Adjust this value to control the speed
-                float tieX = tieFighterImageView.getX() + normalizedOffsetX * speed;
-                float tieY = tieFighterImageView.getY() + normalizedOffsetY * speed;
+                // Calculate new position
+                float tieX = tieFighterImageView.getX() + normalizedOffsetX * TIE_FIGHTER_SPEED;
+                float tieY = tieFighterImageView.getY() + normalizedOffsetY * TIE_FIGHTER_SPEED;
 
-                // Keep the Tie Fighter within the screen bounds
-                tieX = Math.max(0, Math.min(tieX, getResources().getDisplayMetrics().widthPixels - tieFighterImageView.getWidth()));
-                tieY = Math.max(0, Math.min(tieY, getResources().getDisplayMetrics().heightPixels - tieFighterImageView.getHeight()));
+                // Keep within screen bounds
+                tieX = Math.max(0, Math.min(tieX, screenWidth - tieFighterImageView.getWidth()));
+                tieY = Math.max(0, Math.min(tieY, screenHeight - tieFighterImageView.getHeight()));
 
                 tieFighterImageView.setX(tieX);
                 tieFighterImageView.setY(tieY);
 
-                if (joystickIsPressed) {
-                    handlerForMovingTie.postDelayed(this, 10);
+                if (joystickIsPressed && isGameActive) {
+                    handler.postDelayed(this, TIE_FIGHTER_MOVEMENT_INTERVAL);
                 }
             }
         };
 
-        joystickPad.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        joystickIsPressed = true;
-                        handlerForMovingTie.post(movingTie);
-                        moveJoystickPad(event);
-                        break;
-                    case MotionEvent.ACTION_MOVE:
-                        moveJoystickPad(event);
-                        break;
-                    case MotionEvent.ACTION_UP:
-                        joystickIsPressed = false;
-                        // Reset the joystick pad to the center
-                        joystickPad.setX(joystickCenterX - joystickPad.getWidth() / 2f);
-                        joystickPad.setY(joystickCenterY - joystickPad.getHeight() / 2f);
-                        break;
-                    default:
-                        return false;
-                }
-                return true;
-            }
-        });
+        // Set up joystick touch listener
+        joystickPad.setOnTouchListener((v, event) -> {
+            if (!isGameActive) return false;
 
-        animateAsteroid(asteroid1, screenWidth * 0.15f - asteroid1.getWidth() / 2f, screenHeight / 2f);
-        animateAsteroid(asteroid2, screenWidth * 0.65f, screenHeight / 2f);
-        animateAsteroid(asteroid3, screenWidth * 0.15f, 3 * screenHeight / 4f);
-        animateAsteroid(asteroid4,  screenWidth * 0.65f, 3 * screenHeight / 4f);
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    joystickIsPressed = true;
+                    handler.post(movingTieRunnable);
+                    moveJoystickPad(event);
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    moveJoystickPad(event);
+                    break;
+                case MotionEvent.ACTION_UP:
+                    joystickIsPressed = false;
+                    // Reset joystick position
+                    joystickPad.setX(joystickCenterX - joystickPad.getWidth() / 2f);
+                    joystickPad.setY(joystickCenterY - joystickPad.getHeight() / 2f);
+                    break;
+                default:
+                    return false;
+            }
+            return true;
+        });
+    }
+
+    private void startCollisionDetection() {
+        collisionRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!isGameActive) return;
+
+                // Check collisions with all asteroids
+                for (ImageView asteroid : asteroids) {
+                    if (isCollision(tieFighterImageView, asteroid, COLLISION_THRESHOLD)) {
+                        handleCollision();
+                        return;
+                    }
+                }
+
+                // Continue checking if game is active
+                if (isGameActive) {
+                    handler.postDelayed(this, COLLISION_CHECK_INTERVAL);
+                }
+            }
+        };
+        handler.post(collisionRunnable);
+    }
+
+    private void startAsteroidAnimations() {
+        // Start asteroid animations with different positions
+        animateAsteroid(asteroids[0], screenWidth * 0.15f - asteroids[0].getWidth() / 2f, screenHeight / 2f);
+        animateAsteroid(asteroids[1], screenWidth * 0.65f, screenHeight / 2f);
+        animateAsteroid(asteroids[2], screenWidth * 0.15f, 3 * screenHeight / 4f);
+        animateAsteroid(asteroids[3], screenWidth * 0.65f, 3 * screenHeight / 4f);
+    }
+
+    private void moveJoystickPad(MotionEvent event) {
+        float touchX = event.getRawX();
+        float touchY = event.getRawY();
+
+        // Calculate distance from joystick center
+        float distance = (float) Math.sqrt(Math.pow(touchX - joystickCenterX, 2) + Math.pow(touchY - joystickCenterY, 2));
+        float angle = (float) Math.atan2(touchY - joystickCenterY, touchX - joystickCenterX);
+
+        // Clamp to joystick boundaries
+        if (distance > maxJoystickOffset) {
+            touchX = joystickCenterX + maxJoystickOffset * (float) Math.cos(angle);
+            touchY = joystickCenterY + maxJoystickOffset * (float) Math.sin(angle);
+        }
+
+        // Update joystick position
+        joystickPad.setX(touchX - joystickPad.getWidth() / 2f);
+        joystickPad.setY(touchY - joystickPad.getHeight() / 2f);
     }
 
     private void animateAsteroid(ImageView asteroid, float startX, float startY) {
@@ -174,7 +237,7 @@ public class MainActivity extends AppCompatActivity {
         final Path[] currentPath = {createSmoothRandomPath(currentStartPoint[0], currentEndPoint[0])};
         final PathMeasure[] pathMeasure = {new PathMeasure(currentPath[0], false)};
         final float[] length = {pathMeasure[0].getLength()};
-        final int[] currentDuration = {random.nextInt(3000) + 4000};
+        final int[] currentDuration = {random.nextInt(ADDITIONAL_ASTEROID_ANIMATION_DURATION) + MIN_ASTEROID_ANIMATION_DURATION};
 
         // Set initial position
         asteroid.setX(startX);
@@ -184,6 +247,8 @@ public class MainActivity extends AppCompatActivity {
         animator.setDuration(currentDuration[0]);
         animator.setInterpolator(new AccelerateDecelerateInterpolator());
         animator.addUpdateListener(animation -> {
+            if (!isGameActive) return;
+
             float distance = (float) animation.getAnimatedValue();
             float[] aCoordinates = new float[2];
             pathMeasure[0].getPosTan(distance, aCoordinates, null);
@@ -194,14 +259,18 @@ public class MainActivity extends AppCompatActivity {
         animator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
-                // Reset the path to create a new random path
+                if (!isGameActive) return;
+
+                // Create new random path
                 currentStartPoint[0] = currentEndPoint[0];
                 currentEndPoint[0] = getRandomPoint();
                 currentPath[0] = createSmoothRandomPath(currentStartPoint[0], currentEndPoint[0]);
                 pathMeasure[0].setPath(currentPath[0], false);
                 length[0] = pathMeasure[0].getLength();
                 animator.setFloatValues(0f, length[0]);
-                int newDuration = random.nextInt(3000) + 4000;
+
+                // Calculate new duration
+                int newDuration = random.nextInt(ADDITIONAL_ASTEROID_ANIMATION_DURATION) + MIN_ASTEROID_ANIMATION_DURATION;
                 ValueAnimator durationAnimator = ValueAnimator.ofInt(currentDuration[0], newDuration);
                 durationAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
                 durationAnimator.addUpdateListener(animation1 -> {
@@ -209,7 +278,10 @@ public class MainActivity extends AppCompatActivity {
                 });
                 durationAnimator.start();
                 currentDuration[0] = newDuration;
-                animator.start();
+
+                if (isGameActive) {
+                    animator.start();
+                }
             }
         });
 
@@ -229,61 +301,28 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private Point getRandomPoint() {
-        // Ensure points are within screen bounds, considering asteroid size
         int x = random.nextInt(screenWidth);
         int y = random.nextInt(screenHeight);
         return new Point(x, y);
     }
 
-    private void moveJoystickPad(MotionEvent event) {
-        float touchX = event.getRawX();
-        float touchY = event.getRawY();
-
-        // Calculate the distance from the center of the joystick base to the touch point
-        float distance = (float) Math.sqrt(Math.pow(touchX - joystickCenterX, 2) + Math.pow(touchY - joystickCenterY, 2));
-
-        // Calculate the angle between the center of the joystick base and the touch point
-        float angle = (float) Math.atan2(touchY - joystickCenterY, touchX - joystickCenterX);
-
-        // If the touch point is outside the joystick base, clamp it to the edge of the base
-        if (distance > maxJoystickOffset) {
-            touchX = joystickCenterX + maxJoystickOffset * (float) Math.cos(angle);
-            touchY = joystickCenterY + maxJoystickOffset * (float) Math.sin(angle);
-        }
-
-        // Set the position of the joystick pad
-        joystickPad.setX(touchX - joystickPad.getWidth() / 2f);
-        joystickPad.setY(touchY - joystickPad.getHeight() / 2f);
-    }
-
     private boolean isCollision(ImageView tieFighter, ImageView asteroid, float collisionThresholdPercentage) {
-        // Get the bounding rectangles
+        // Get bounding rectangles
         Rect tieRect = getImageViewRect(tieFighter);
         Rect asteroidRect = getImageViewRect(asteroid);
 
-        // Check if the rectangles overlap at all
+        // Check for rectangle intersection
         if (!Rect.intersects(tieRect, asteroidRect)) {
             return false;
         }
 
-        // Calculate the intersection rectangle
-        Rect intersection = new Rect(
-                Math.max(tieRect.left, asteroidRect.left),
-                Math.max(tieRect.top, asteroidRect.top),
-                Math.min(tieRect.right, asteroidRect.right),
-                Math.min(tieRect.bottom, asteroidRect.bottom)
-        );
+        // Calculate intersection area
+        Rect intersection = new Rect(Math.max(tieRect.left, asteroidRect.left), Math.max(tieRect.top, asteroidRect.top), Math.min(tieRect.right, asteroidRect.right), Math.min(tieRect.bottom, asteroidRect.bottom));
 
-        // Calculate the area of the intersection
         int intersectionArea = intersection.width() * intersection.height();
-
-        // Calculate the area of the smaller object
         int smallerObjectArea = Math.min(tieRect.width() * tieRect.height(), asteroidRect.width() * asteroidRect.height());
-
-        // Calculate the threshold area
         int thresholdArea = (int) (smallerObjectArea * collisionThresholdPercentage);
 
-        // Check if the intersection area is greater than the threshold
         return intersectionArea >= thresholdArea;
     }
 
@@ -293,49 +332,75 @@ public class MainActivity extends AppCompatActivity {
         return new Rect(location[0], location[1], location[0] + imageView.getWidth(), location[1] + imageView.getHeight());
     }
 
-    private void handleCollision(ImageView tieFighter) {
-        // Stop moving the Tie Fighter
-        joystickIsPressed = false;
-        handlerForMovingTie.removeCallbacks(movingTie);
+    private void handleCollision() {
+        if (!isGameActive) return;
 
-        // Display the explosion animation
-        displayExplosion(tieFighter);
+        // End the game
+        isGameActive = false;
+        joystickIsPressed = false;
+        handler.removeCallbacks(movingTieRunnable);
+        handler.removeCallbacks(collisionRunnable);
+
+        // Display explosion
+        displayExplosion(tieFighterImageView);
+
+        // Show game over screen after explosion
+        handler.postDelayed(this::showGameOverScreen, EXPLOSION_ANIMATION_DURATION);
     }
 
     private void displayExplosion(ImageView tieFighter) {
-        // Create a new ImageView for the explosion
+        // Create explosion ImageView
         ImageView explosionImageView = new ImageView(this);
-        explosionImageView.setImageResource(R.drawable.explosion); // Replace with your explosion drawable
+        explosionImageView.setImageResource(R.drawable.explosion);
+        explosionImageView.setLayoutParams(new ViewGroup.LayoutParams(tieFighter.getWidth(), tieFighter.getHeight()));
 
-        // Set the size of the explosion to match the Tie Fighter
-        explosionImageView.setLayoutParams(new android.widget.FrameLayout.LayoutParams(tieFighter.getWidth(), tieFighter.getHeight()));
+        // Add explosion to layout
+        mainLayout.addView(explosionImageView);
 
-        // Add the explosion to the layout
-        ((android.view.ViewGroup) findViewById(R.id.main)).addView(explosionImageView);
-
-        // Position the explosion at the center of the Tie Fighter
+        // Position explosion
         int[] tieLocation = new int[2];
         tieFighter.getLocationOnScreen(tieLocation);
-
-        // Calculate the center of the Tie Fighter
-        int tieCenterX = tieLocation[0] ;
+        int tieCenterX = tieLocation[0];
         int tieCenterY = tieLocation[1] - tieFighter.getHeight() / 2;
-
-        // Calculate the center of the explosion
 
         explosionImageView.setX(tieCenterX);
         explosionImageView.setY(tieCenterY);
 
-        // Create a fade-out animation
-        android.animation.ObjectAnimator fadeOut = android.animation.ObjectAnimator.ofFloat(explosionImageView, "alpha", 1f, 0f);
-        fadeOut.setDuration(500); // Adjust duration as needed
-        fadeOut.addListener(new android.animation.AnimatorListenerAdapter() {
+        // Fade out animation
+        ObjectAnimator fadeOut = ObjectAnimator.ofFloat(explosionImageView, "alpha", 1f, 0f);
+        fadeOut.setDuration(EXPLOSION_ANIMATION_DURATION);
+        fadeOut.addListener(new AnimatorListenerAdapter() {
             @Override
-            public void onAnimationEnd(android.animation.Animator animation) {
-                // Remove the explosion after the animation
-                ((android.view.ViewGroup) findViewById(R.id.main)).removeView(explosionImageView);
+            public void onAnimationEnd(Animator animation) {
+                mainLayout.removeView(explosionImageView);
             }
         });
         fadeOut.start();
+    }
+
+    private void showGameOverScreen() {
+        // Inflate the game over layout
+        LayoutInflater inflater = LayoutInflater.from(this);
+        gameOverLayout = inflater.inflate(R.layout.game_over_layout, mainLayout, false);
+        mainLayout.addView(gameOverLayout);
+
+        // Set up restart button
+        Button restartButton = gameOverLayout.findViewById(R.id.restartButton);
+        restartButton.setOnClickListener(v -> restartGame());
+    }
+
+    private void restartGame() {
+        // Restart activity properly
+        Intent intent = getIntent();
+        finish();
+        startActivity(intent);
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // Clean up handlers
+        handler.removeCallbacksAndMessages(null);
     }
 }
