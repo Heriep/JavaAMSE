@@ -37,10 +37,16 @@ public class MainActivity extends AppCompatActivity {
     private static final float COLLISION_THRESHOLD = 0.3f;
     private static final int COLLISION_CHECK_INTERVAL = 10; // milliseconds
     private static final int TIE_FIGHTER_MOVEMENT_INTERVAL = 10; // milliseconds
-    private static final float TIE_FIGHTER_SPEED = 10.0f;
+    private static final float TIE_FIGHTER_SPEED = 15.0f;
     private static final int MIN_ASTEROID_ANIMATION_DURATION = 4000;
     private static final int ADDITIONAL_ASTEROID_ANIMATION_DURATION = 3000;
     private static final int EXPLOSION_ANIMATION_DURATION = 500;
+
+    // Physics constants
+    private static final float MIN_ASTEROID_SPEED = 10.0f;
+    private static final float MAX_ASTEROID_SPEED = 20.0f;
+    private static final int PHYSICS_UPDATE_INTERVAL = 16; // ~60 FPS
+
     private final Random random = new Random();
     // Handlers and Runnables
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -66,6 +72,10 @@ public class MainActivity extends AppCompatActivity {
     // Asteroid array for easier management
     private ImageView[] asteroids;
 
+    // Physics fields
+    private AsteroidPhysics[] asteroidPhysics;
+    private Runnable physicsRunnable;
+
     @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,7 +87,7 @@ public class MainActivity extends AppCompatActivity {
         initializeGameElements();
         setupJoystick();
         startCollisionDetection();
-        startAsteroidAnimations();
+        startAsteroidPhysics(); // Replaced startAsteroidAnimations()
     }
 
     private void setupWindowInsets() {
@@ -204,14 +214,6 @@ public class MainActivity extends AppCompatActivity {
         handler.post(collisionRunnable);
     }
 
-    private void startAsteroidAnimations() {
-        // Start asteroid animations with different positions
-        animateAsteroid(asteroids[0], screenWidth * 0.15f - asteroids[0].getWidth() / 2f, screenHeight / 2f);
-        animateAsteroid(asteroids[1], screenWidth * 0.65f, screenHeight / 2f);
-        animateAsteroid(asteroids[2], screenWidth * 0.15f, 3 * screenHeight / 4f);
-        animateAsteroid(asteroids[3], screenWidth * 0.65f, 3 * screenHeight / 4f);
-    }
-
     private void moveJoystickPad(MotionEvent event) {
         float touchX = event.getRawX();
         float touchY = event.getRawY();
@@ -231,80 +233,147 @@ public class MainActivity extends AppCompatActivity {
         joystickPad.setY(touchY - joystickPad.getHeight() / 2f);
     }
 
-    private void animateAsteroid(ImageView asteroid, float startX, float startY) {
-        final Point[] currentStartPoint = {new Point((int) startX, (int) startY)};
-        final Point[] currentEndPoint = {getRandomPoint()};
-        final Path[] currentPath = {createSmoothRandomPath(currentStartPoint[0], currentEndPoint[0])};
-        final PathMeasure[] pathMeasure = {new PathMeasure(currentPath[0], false)};
-        final float[] length = {pathMeasure[0].getLength()};
-        final int[] currentDuration = {random.nextInt(ADDITIONAL_ASTEROID_ANIMATION_DURATION) + MIN_ASTEROID_ANIMATION_DURATION};
+    // New physics-based asteroid methods
 
-        // Set initial position
-        asteroid.setX(startX);
-        asteroid.setY(startY);
+    private void initializeAsteroidPhysics() {
+        asteroidPhysics = new AsteroidPhysics[asteroids.length];
+        for (int i = 0; i < asteroids.length; i++) {
+            float radius = asteroids[i].getWidth() / 2f;
+            float randomVelocityX = getRandomVelocity();
+            float randomVelocityY = getRandomVelocity();
+            asteroidPhysics[i] = new AsteroidPhysics(randomVelocityX, randomVelocityY, radius);
+        }
 
-        ValueAnimator animator = ValueAnimator.ofFloat(0f, length[0]);
-        animator.setDuration(currentDuration[0]);
-        animator.setInterpolator(new AccelerateDecelerateInterpolator());
-        animator.addUpdateListener(animation -> {
-            if (!isGameActive) return;
+        // Set initial positions
+        asteroids[0].setX(screenWidth * 0.15f);
+        asteroids[0].setY(screenHeight * 0.6f);
+        asteroids[1].setX(screenWidth * 0.65f);
+        asteroids[1].setY(screenHeight * 0.6f);
+        asteroids[2].setX(screenWidth * 0.25f);
+        asteroids[2].setY(screenHeight * 0.8f);
+        asteroids[3].setX(screenWidth * 0.75f);
+        asteroids[3].setY(screenHeight * 0.8f);
+    }
 
-            float distance = (float) animation.getAnimatedValue();
-            float[] aCoordinates = new float[2];
-            pathMeasure[0].getPosTan(distance, aCoordinates, null);
-            asteroid.setX(aCoordinates[0]);
-            asteroid.setY(aCoordinates[1]);
-        });
+    private float getRandomVelocity() {
+        float velocity = random.nextFloat() * (MAX_ASTEROID_SPEED - MIN_ASTEROID_SPEED) + MIN_ASTEROID_SPEED;
+        return random.nextBoolean() ? velocity : -velocity;
+    }
 
-        animator.addListener(new AnimatorListenerAdapter() {
+    private void startAsteroidPhysics() {
+        // Initialize physics properties
+        initializeAsteroidPhysics();
+
+        physicsRunnable = new Runnable() {
             @Override
-            public void onAnimationEnd(Animator animation) {
+            public void run() {
                 if (!isGameActive) return;
 
-                // Create new random path
-                currentStartPoint[0] = currentEndPoint[0];
-                currentEndPoint[0] = getRandomPoint();
-                currentPath[0] = createSmoothRandomPath(currentStartPoint[0], currentEndPoint[0]);
-                pathMeasure[0].setPath(currentPath[0], false);
-                length[0] = pathMeasure[0].getLength();
-                animator.setFloatValues(0f, length[0]);
-
-                // Calculate new duration
-                int newDuration = random.nextInt(ADDITIONAL_ASTEROID_ANIMATION_DURATION) + MIN_ASTEROID_ANIMATION_DURATION;
-                ValueAnimator durationAnimator = ValueAnimator.ofInt(currentDuration[0], newDuration);
-                durationAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
-                durationAnimator.addUpdateListener(animation1 -> {
-                    animator.setDuration((int) animation1.getAnimatedValue());
-                });
-                durationAnimator.start();
-                currentDuration[0] = newDuration;
+                updateAsteroidPositions();
+                checkAsteroidBoundaryCollisions();
+                checkAsteroidCollisions();
 
                 if (isGameActive) {
-                    animator.start();
+                    handler.postDelayed(this, PHYSICS_UPDATE_INTERVAL);
                 }
             }
-        });
-
-        animator.start();
+        };
+        handler.post(physicsRunnable);
     }
 
-    private Path createSmoothRandomPath(Point startPoint, Point endPoint) {
-        Path path = new Path();
-        path.moveTo(startPoint.x, startPoint.y);
+    private void updateAsteroidPositions() {
+        for (int i = 0; i < asteroids.length; i++) {
+            ImageView asteroid = asteroids[i];
+            AsteroidPhysics physics = asteroidPhysics[i];
 
-        Point controlPoint1 = getRandomPoint();
-        Point controlPoint2 = getRandomPoint();
+            float newX = asteroid.getX() + physics.velocityX;
+            float newY = asteroid.getY() + physics.velocityY;
 
-        path.cubicTo(controlPoint1.x, controlPoint1.y, controlPoint2.x, controlPoint2.y, endPoint.x, endPoint.y);
-
-        return path;
+            asteroid.setX(newX);
+            asteroid.setY(newY);
+        }
     }
 
-    private Point getRandomPoint() {
-        int x = random.nextInt(screenWidth);
-        int y = random.nextInt(screenHeight);
-        return new Point(x, y);
+    private void checkAsteroidBoundaryCollisions() {
+        for (int i = 0; i < asteroids.length; i++) {
+            ImageView asteroid = asteroids[i];
+            AsteroidPhysics physics = asteroidPhysics[i];
+
+            float left = asteroid.getX();
+            float right = left + asteroid.getWidth();
+            float top = asteroid.getY();
+            float bottom = top + asteroid.getHeight();
+
+            // Left or right wall collision
+            if (left <= 0 || right >= screenWidth) {
+                physics.velocityX = -physics.velocityX; // Reverse X velocity
+
+                // Adjust position to prevent sticking at the boundary
+                if (left <= 0) {
+                    asteroid.setX(0);
+                } else if (right >= screenWidth) {
+                    asteroid.setX(screenWidth - asteroid.getWidth());
+                }
+            }
+
+            // Top or bottom wall collision
+            if (top <= 0 || bottom >= screenHeight) {
+                physics.velocityY = -physics.velocityY; // Reverse Y velocity
+
+                // Adjust position to prevent sticking at the boundary
+                if (top <= 0) {
+                    asteroid.setY(0);
+                } else if (bottom >= screenHeight) {
+                    asteroid.setY(screenHeight - asteroid.getHeight());
+                }
+            }
+        }
     }
+
+    private void checkAsteroidCollisions() {
+        for (int i = 0; i < asteroids.length - 1; i++) {
+            for (int j = i + 1; j < asteroids.length; j++) {
+                ImageView asteroid1 = asteroids[i];
+                ImageView asteroid2 = asteroids[j];
+                AsteroidPhysics physics1 = asteroidPhysics[i];
+                AsteroidPhysics physics2 = asteroidPhysics[j];
+
+                // Calculate centers
+                float center1X = asteroid1.getX() + asteroid1.getWidth() / 2f;
+                float center1Y = asteroid1.getY() + asteroid1.getHeight() / 2f;
+                float center2X = asteroid2.getX() + asteroid2.getWidth() / 2f;
+                float center2Y = asteroid2.getY() + asteroid2.getHeight() / 2f;
+
+                // Calculate distance between centers
+                float distanceX = center2X - center1X;
+                float distanceY = center2Y - center1Y;
+                float distance = (float) Math.sqrt(distanceX * distanceX + distanceY * distanceY);
+
+                // Check if collision occurred
+                if (distance < (physics1.radius + physics2.radius)) {
+                    // Exchange velocities (simplified physics)
+                    float tempVelocityX = physics1.velocityX;
+                    float tempVelocityY = physics1.velocityY;
+                    physics1.velocityX = physics2.velocityX;
+                    physics1.velocityY = physics2.velocityY;
+                    physics2.velocityX = tempVelocityX;
+                    physics2.velocityY = tempVelocityY;
+
+                    // Separate asteroids to prevent sticking
+                    float overlap = (physics1.radius + physics2.radius) - distance;
+                    float separationX = (overlap * distanceX / distance) / 2f;
+                    float separationY = (overlap * distanceY / distance) / 2f;
+
+                    asteroid1.setX(asteroid1.getX() - separationX);
+                    asteroid1.setY(asteroid1.getY() - separationY);
+                    asteroid2.setX(asteroid2.getX() + separationX);
+                    asteroid2.setY(asteroid2.getY() + separationY);
+                }
+            }
+        }
+    }
+
+    // Keep existing methods
 
     private boolean isCollision(ImageView tieFighter, ImageView asteroid, float collisionThresholdPercentage) {
         // Get bounding rectangles
@@ -317,10 +386,14 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Calculate intersection area
-        Rect intersection = new Rect(Math.max(tieRect.left, asteroidRect.left), Math.max(tieRect.top, asteroidRect.top), Math.min(tieRect.right, asteroidRect.right), Math.min(tieRect.bottom, asteroidRect.bottom));
+        Rect intersection = new Rect(Math.max(tieRect.left, asteroidRect.left),
+                Math.max(tieRect.top, asteroidRect.top),
+                Math.min(tieRect.right, asteroidRect.right),
+                Math.min(tieRect.bottom, asteroidRect.bottom));
 
         int intersectionArea = intersection.width() * intersection.height();
-        int smallerObjectArea = Math.min(tieRect.width() * tieRect.height(), asteroidRect.width() * asteroidRect.height());
+        int smallerObjectArea = Math.min(tieRect.width() * tieRect.height(),
+                asteroidRect.width() * asteroidRect.height());
         int thresholdArea = (int) (smallerObjectArea * collisionThresholdPercentage);
 
         return intersectionArea >= thresholdArea;
@@ -329,7 +402,9 @@ public class MainActivity extends AppCompatActivity {
     private Rect getImageViewRect(ImageView imageView) {
         int[] location = new int[2];
         imageView.getLocationOnScreen(location);
-        return new Rect(location[0], location[1], location[0] + imageView.getWidth(), location[1] + imageView.getHeight());
+        return new Rect(location[0], location[1],
+                location[0] + imageView.getWidth(),
+                location[1] + imageView.getHeight());
     }
 
     private void handleCollision() {
@@ -340,6 +415,7 @@ public class MainActivity extends AppCompatActivity {
         joystickIsPressed = false;
         handler.removeCallbacks(movingTieRunnable);
         handler.removeCallbacks(collisionRunnable);
+        handler.removeCallbacks(physicsRunnable);
 
         // Display explosion
         displayExplosion(tieFighterImageView);
@@ -401,6 +477,22 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         // Clean up handlers
+        handler.removeCallbacks(movingTieRunnable);
+        handler.removeCallbacks(collisionRunnable);
+        handler.removeCallbacks(physicsRunnable);
         handler.removeCallbacksAndMessages(null);
+    }
+
+    // Inner class for asteroid physics
+    private static class AsteroidPhysics {
+        public float velocityX;
+        public float velocityY;
+        public float radius;
+
+        public AsteroidPhysics(float velocityX, float velocityY, float radius) {
+            this.velocityX = velocityX;
+            this.velocityY = velocityY;
+            this.radius = radius;
+        }
     }
 }
