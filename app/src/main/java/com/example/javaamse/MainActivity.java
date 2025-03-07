@@ -19,6 +19,8 @@ import android.os.Handler;
 import android.view.MotionEvent;
 import android.view.View;
 
+import android.content.Intent;
+
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
@@ -57,6 +59,7 @@ public class MainActivity extends AppCompatActivity {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
+
         // Get screen dimensions
         DisplayMetrics displayMetrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getRealMetrics(displayMetrics);
@@ -71,6 +74,10 @@ public class MainActivity extends AppCompatActivity {
         joystickPad = findViewById(R.id.Pad_center);
         tieFighterImageView = findViewById(R.id.Tie);
         joystickBase = findViewById(R.id.Pad_exterior);
+
+        // Set initial position of the Tie Fighter to the top center of the screen
+        tieFighterImageView.setX(0);
+        tieFighterImageView.setY(- screenHeight / 3f);
 
         // Calculate the center of the joystick base
         joystickBase.post(() -> {
@@ -155,19 +162,23 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        animateAsteroid(asteroid1);
-        animateAsteroid(asteroid2);
-        animateAsteroid(asteroid3);
-        animateAsteroid(asteroid4);
+        animateAsteroid(asteroid1, screenWidth * 0.15f - asteroid1.getWidth() / 2f, screenHeight / 2f);
+        animateAsteroid(asteroid2, screenWidth * 0.65f, screenHeight / 2f);
+        animateAsteroid(asteroid3, screenWidth * 0.15f, 3 * screenHeight / 4f);
+        animateAsteroid(asteroid4,  screenWidth * 0.65f, 3 * screenHeight / 4f);
     }
 
-    private void animateAsteroid(ImageView asteroid) {
-        final Point[] currentStartPoint = {getRandomPoint()};
+    private void animateAsteroid(ImageView asteroid, float startX, float startY) {
+        final Point[] currentStartPoint = {new Point((int) startX, (int) startY)};
         final Point[] currentEndPoint = {getRandomPoint()};
         final Path[] currentPath = {createSmoothRandomPath(currentStartPoint[0], currentEndPoint[0])};
         final PathMeasure[] pathMeasure = {new PathMeasure(currentPath[0], false)};
         final float[] length = {pathMeasure[0].getLength()};
         final int[] currentDuration = {random.nextInt(3000) + 4000};
+
+        // Set initial position
+        asteroid.setX(startX);
+        asteroid.setY(startY);
 
         ValueAnimator animator = ValueAnimator.ofFloat(0f, length[0]);
         animator.setDuration(currentDuration[0]);
@@ -201,10 +212,6 @@ public class MainActivity extends AppCompatActivity {
                 animator.start();
             }
         });
-
-        // Set initial position
-        asteroid.setX(currentStartPoint[0].x);
-        asteroid.setY(currentStartPoint[0].y);
 
         animator.start();
     }
