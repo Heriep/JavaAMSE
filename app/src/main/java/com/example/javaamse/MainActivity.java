@@ -29,6 +29,17 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.widget.TextView;
+
+// Add these imports at the top
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.content.Context;
+
 import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
@@ -81,6 +92,20 @@ public class MainActivity extends AppCompatActivity {
     // Add these fields to the class
     private boolean isInvulnerable = true;
     private static final int INVULNERABILITY_DURATION = 2000; // 2 seconds
+    private int currentScore = 0;
+    private int bestScore = 0;
+    private TextView scoreTextView;
+    private final int SCORE_INCREMENT_INTERVAL = 1000; // 1 second
+    private Runnable scoreRunnable;
+    // Add these fields to the MainActivity class
+    private boolean useGyroscope = false;
+    private SensorManager sensorManager;
+    private Sensor gyroscopeSensor;
+    private SensorEventListener gyroscopeEventListener;
+    private float[] rotationMatrix = new float[9];
+    private float[] orientationValues = new float[3];
+    private float[] gyroscopeValues = new float[3];
+    private static final float GYROSCOPE_SENSITIVITY = 0.05f; // Adjust sensitivity
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -95,6 +120,12 @@ public class MainActivity extends AppCompatActivity {
         asteroidCount = intent.getIntExtra("ASTEROID_COUNT", 4);
         asteroidSpeedFactor = intent.getFloatExtra("ASTEROID_SPEED_FACTOR", 1.0f);
         tieSpeed = intent.getFloatExtra("TIE_SPEED", 10.0f);
+        useGyroscope = intent.getBooleanExtra("USE_GYROSCOPE", false);
+
+        // Initialize sensors if gyroscope is enabled
+        if (useGyroscope) {
+            initializeGyroscope();
+        }
 
         initializeScreenDimensions();
         initializeGameElements();
@@ -111,6 +142,79 @@ public class MainActivity extends AppCompatActivity {
             // Reset visibility to ensure the ship is fully visible
             tieFighterImageView.setAlpha(1.0f);
         }, INVULNERABILITY_DURATION);
+    }
+    private void initializeGyroscope() {
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY);
+
+        if (gyroscopeSensor == null) {
+            // Fall back to accelerometer if gyroscope isn't available
+            gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        }
+
+        if (gyroscopeSensor != null) {
+            gyroscopeEventListener = new SensorEventListener() {
+                @Override
+                public void onSensorChanged(SensorEvent event) {
+                    if (!isGameActive) return;
+
+                    gyroscopeValues[0] = event.values[0]; // X axis (tilt left/right)
+                    gyroscopeValues[1] = event.values[1]; // Y axis (tilt forward/backward)
+
+                    if (useGyroscope && !joystickIsPressed) {
+                        moveShipWithGyroscope();
+                    }
+                }
+
+                @Override
+                public void onAccuracyChanged(Sensor sensor, int accuracy) {
+                    // Not needed for this implementation
+                }
+            };
+        } else {
+            // No sensors available, disable gyroscope control
+            useGyroscope = false;
+        }
+    }
+
+    private void moveShipWithGyroscope() {
+        // Y-axis controls left-right movement (negative is right tilt)
+        float tiltX = -gyroscopeValues[0];
+        // X-axis controls up-down movement (positive is forward tilt)
+        float tiltY = gyroscopeValues[1];
+
+        // Apply sensitivity and calculate new position
+        float tieX = tieFighterImageView.getX() + tiltX * tieSpeed * 0.1f * GYROSCOPE_SENSITIVITY;
+        float tieY = tieFighterImageView.getY() + tiltY * tieSpeed * 0.1f * GYROSCOPE_SENSITIVITY;
+
+        // Keep within screen bounds
+        tieX = Math.max(0, Math.min(tieX, screenWidth - tieFighterImageView.getWidth()));
+        tieY = Math.max(0, Math.min(tieY, screenHeight - tieFighterImageView.getHeight()));
+
+        tieFighterImageView.setX(tieX);
+        tieFighterImageView.setY(tieY);
+
+        // Continue updating if game is active
+        if (isGameActive && useGyroscope) {
+            handler.postDelayed(() -> moveShipWithGyroscope(), TIE_FIGHTER_MOVEMENT_INTERVAL);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (useGyroscope && gyroscopeSensor != null && gyroscopeEventListener != null) {
+            sensorManager.registerListener(gyroscopeEventListener, gyroscopeSensor,
+                    SensorManager.SENSOR_DELAY_GAME);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (useGyroscope && sensorManager != null && gyroscopeEventListener != null) {
+            sensorManager.unregisterListener(gyroscopeEventListener);
+        }
     }
 
     private void setupWindowInsets() {
@@ -166,6 +270,87 @@ public class MainActivity extends AppCompatActivity {
             joystickCenterY = joystickBase.getY() + joystickBase.getHeight() / 2f;
             maxJoystickOffset = joystickBase.getWidth() / 2f;
         });
+
+        // Create score display
+        scoreTextView = new TextView(this);
+        scoreTextView.setTextColor(Color.WHITE);
+        scoreTextView.setTextSize(24);
+        scoreTextView.setText("Score: 0");
+
+        ConstraintLayout.LayoutParams params = new ConstraintLayout.LayoutParams(
+                ConstraintLayout.LayoutParams.WRAP_CONTENT,
+                ConstraintLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
+        params.startToStart = ConstraintLayout.LayoutParams.PARENT_ID;
+        params.setMargins(40, 40, 0, 0);
+        scoreTextView.setLayoutParams(params);
+
+        mainLayout.addView(scoreTextView);
+
+        // Load best score
+        loadBestScore();
+
+        // Start score timer
+        startScoreTimer();
+    }
+
+    private void startScoreTimer() {
+        scoreRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isGameActive) {
+                    currentScore += 10;
+                    scoreTextView.setText("Score: " + currentScore);
+                    handler.postDelayed(this, SCORE_INCREMENT_INTERVAL);
+                }
+            }
+        };
+        handler.post(scoreRunnable);
+    }
+
+    private void saveBestScore() {
+        if (currentScore > bestScore) {
+            bestScore = currentScore;
+
+            // Get the difficulty from the intent
+            int asteroidCount = getIntent().getIntExtra("ASTEROID_COUNT", 4);
+            String difficultyKey;
+
+            // Determine difficulty key based on asteroid count
+            if (asteroidCount == 3) {
+                difficultyKey = "BestScoreEasy";
+            } else if (asteroidCount == 4) {
+                difficultyKey = "BestScoreNormal";
+            } else {
+                difficultyKey = "BestScoreHard";
+            }
+
+            SharedPreferences prefs = getSharedPreferences("GamePrefs", MODE_PRIVATE);
+            SharedPreferences.Editor editor = prefs.edit();
+            editor.putInt(difficultyKey, bestScore);
+            editor.putInt("BestScore", bestScore); // Keep this for backward compatibility
+            editor.apply();
+        }
+    }
+
+    private void loadBestScore() {
+        SharedPreferences prefs = getSharedPreferences("GamePrefs", MODE_PRIVATE);
+
+        // Get the difficulty from the intent
+        int asteroidCount = getIntent().getIntExtra("ASTEROID_COUNT", 4);
+        String difficultyKey;
+
+        // Determine difficulty key based on asteroid count
+        if (asteroidCount == 3) {
+            difficultyKey = "BestScoreEasy";
+        } else if (asteroidCount == 4) {
+            difficultyKey = "BestScoreNormal";
+        } else {
+            difficultyKey = "BestScoreHard";
+        }
+
+        bestScore = prefs.getInt(difficultyKey, 0);
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -219,6 +404,10 @@ public class MainActivity extends AppCompatActivity {
                     // Reset joystick position
                     joystickPad.setX(joystickCenterX - joystickPad.getWidth() / 2f);
                     joystickPad.setY(joystickCenterY - joystickPad.getHeight() / 2f);
+                    // Resume gyroscope control if enabled
+                    if (useGyroscope) {
+                        handler.post(() -> moveShipWithGyroscope());
+                    }
                     break;
                 default:
                     return false;
@@ -513,6 +702,10 @@ public class MainActivity extends AppCompatActivity {
         // End the game
         isGameActive = false;
         joystickIsPressed = false;
+
+        // Clean up handlers and save score
+        handler.removeCallbacks(scoreRunnable);
+        saveBestScore();
         handler.removeCallbacks(movingTieRunnable);
         handler.removeCallbacks(collisionRunnable);
         handler.removeCallbacks(physicsRunnable);
@@ -560,9 +753,32 @@ public class MainActivity extends AppCompatActivity {
         gameOverLayout = inflater.inflate(R.layout.game_over_layout, mainLayout, false);
         mainLayout.addView(gameOverLayout);
 
+        // Set scores
+        TextView finalScoreText = gameOverLayout.findViewById(R.id.finalScoreText);
+        TextView bestScoreText = gameOverLayout.findViewById(R.id.bestScoreText);
+
+        if (finalScoreText != null) {
+            finalScoreText.setText("Score: " + currentScore);
+        }
+
+        if (bestScoreText != null) {
+            bestScoreText.setText("Meilleur: " + bestScore);
+        }
+
         // Set up restart button
         Button restartButton = gameOverLayout.findViewById(R.id.restartButton);
         restartButton.setOnClickListener(v -> restartGame());
+
+        // Set up back to menu button
+        Button menuButton = gameOverLayout.findViewById(R.id.menuButton);
+        menuButton.setOnClickListener(v -> goToMainMenu());
+    }
+
+    private void goToMainMenu() {
+        // Create intent for LaunchActivity
+        Intent intent = new Intent(this, LaunchActivity.class);
+        startActivity(intent);
+        finish(); // Close current activity
     }
 
     private void restartGame() {

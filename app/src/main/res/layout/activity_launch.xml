@@ -5,36 +5,72 @@
     android:layout_height="match_parent"
     android:background="@drawable/etoilefond">
 
-    <TextView
-        android:id="@+id/titleText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="60dp"
-        android:text="SPACE ADVENTURE"
-        android:textColor="#FFFFFF"
-        android:textSize="32sp"
-        android:textStyle="bold"
+    <!-- Semi-transparent panel for better readability -->
+    <View
+        android:id="@+id/overlayPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_margin="20dp"
+        android:alpha="0.8"
+        android:background="@drawable/panel_background"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- Enhanced title -->
     <TextView
-        android:id="@+id/difficultyLabel"
+        android:id="@+id/titleText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="40dp"
-        android:text="SELECT DIFFICULTY"
-        android:textColor="#FFFFFF"
-        android:textSize="24sp"
+        android:layout_marginTop="30dp"
+        android:fontFamily="sans-serif-condensed"
+        android:shadowColor="#000000"
+        android:shadowDx="2"
+        android:shadowDy="2"
+        android:shadowRadius="4"
+        android:text="SPACE ADVENTURE"
+        android:textColor="#FFD700"
+        android:textSize="32sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/overlayPanel" />
+
+    <!-- Decorative ship image -->
+    <ImageView
+        android:id="@+id/shipDecoration"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_marginTop="10dp"
+        android:contentDescription="Decorative ship"
+        android:src="@drawable/tie"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/titleText" />
 
-    <RadioGroup
-        android:id="@+id/difficultyRadioGroup"
+    <!-- Styled difficulty section -->
+    <TextView
+        android:id="@+id/difficultyLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="10dp"
+        android:fontFamily="sans-serif-condensed"
+        android:letterSpacing="0.1"
+        android:text="DIFFICULTÉ"
+        android:textColor="#80FFFFFF"
+        android:textSize="24sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/shipDecoration" />
+
+    <RadioGroup
+        android:id="@+id/difficultyRadioGroup"
+        android:layout_width="280dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="15dp"
+        android:background="@drawable/radio_group_background"
+        android:padding="10dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/difficultyLabel">
@@ -43,72 +79,118 @@
             android:id="@+id/easyRadioButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Easy (3 Asteroids, Low Speed)"
+            android:text="Facile (3 asteroïdes à basse vitesse)"
             android:textColor="#FFFFFF"
             android:textSize="18sp"
+            android:padding="5dp"
+            android:fontFamily="sans-serif-light"
             android:checked="true" />
 
         <RadioButton
             android:id="@+id/mediumRadioButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Medium (4 Asteroids, Medium Speed)"
+            android:text="Normal (4 asteroïdes à vitesse normale)"
             android:textColor="#FFFFFF"
-            android:textSize="18sp" />
+            android:textSize="18sp"
+            android:padding="5dp"
+            android:fontFamily="sans-serif-light" />
 
         <RadioButton
             android:id="@+id/hardRadioButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Hard (5 Asteroids, High Speed)"
+            android:text="Difficile (5 asteroïdes à haute vitesse)"
             android:textColor="#FFFFFF"
-            android:textSize="18sp" />
+            android:textSize="18sp"
+            android:padding="5dp"
+            android:fontFamily="sans-serif-light" />
     </RadioGroup>
 
+    <!-- Enhanced speed control section -->
     <TextView
         android:id="@+id/tieSpeedLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="30dp"
-        android:text="TIE FIGHTER SPEED"
-        android:textColor="#FFFFFF"
+        android:layout_marginTop="25dp"
+        android:text="VITESSE DU VAISSEAU"
+        android:textColor="#80FFFFFF"
         android:textSize="20sp"
+        android:fontFamily="sans-serif-condensed"
+        android:letterSpacing="0.1"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/difficultyRadioGroup" />
 
-    <SeekBar
-        android:id="@+id/tieSpeedSeekBar"
-        android:layout_width="300dp"
+    <!-- Speed control container -->
+    <LinearLayout
+        android:id="@+id/speedControlLayout"
+        android:layout_width="280dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:max="20"
-        android:progress="10"
+        android:background="@drawable/speed_control_background"
+        android:padding="15dp"
+        android:orientation="vertical"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tieSpeedLabel" />
+        app:layout_constraintTop_toBottomOf="@+id/tieSpeedLabel">
 
-    <TextView
-        android:id="@+id/tieSpeedValue"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="5dp"
-        android:text="Speed: 10"
-        android:textColor="#FFFFFF"
-        app:layout_constraintEnd_toEndOf="@+id/tieSpeedSeekBar"
-        app:layout_constraintStart_toStartOf="@+id/tieSpeedSeekBar"
-        app:layout_constraintTop_toBottomOf="@+id/tieSpeedSeekBar" />
+        <SeekBar
+            android:id="@+id/tieSpeedSeekBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="30"
+            android:min="5"
+            android:progress="15" />
 
+        <TextView
+            android:id="@+id/tieSpeedValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_gravity="center"
+            android:text="Vitesse : 15"
+            android:textColor="#FFFFFF"
+            android:fontFamily="sans-serif-light" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <CheckBox
+                android:id="@+id/gyroscopeCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-light"
+                android:text="Contrôle par gyroscope"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Enhanced start button -->
     <Button
         android:id="@+id/startButton"
-        android:layout_width="200dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="40dp"
-        android:text="START GAME"
-        android:textSize="18sp"
+        android:layout_width="220dp"
+        android:layout_height="60dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="10dp"
         android:backgroundTint="#3F51B5"
+        android:fontFamily="sans-serif-condensed-medium"
+        android:text="DÉMARRER LA MISSION"
+        android:textAllCaps="true"
+        android:textColor="#FFFFFF"
+        android:textSize="17sp"
+        app:layout_constraintBottom_toBottomOf="@+id/overlayPanel"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tieSpeedValue" />
+        app:layout_constraintTop_toBottomOf="@+id/speedControlLayout" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
