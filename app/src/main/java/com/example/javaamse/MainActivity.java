@@ -5,11 +5,15 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.content.Intent;
-import android.graphics.Path;
-import android.graphics.PathMeasure;
-import android.graphics.Point;
+import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.graphics.Rect;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -18,9 +22,9 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -29,92 +33,83 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
-import android.content.SharedPreferences;
-import android.graphics.Color;
-import android.widget.TextView;
-
-// Add these imports at the top
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
-import android.content.Context;
-
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
 
-    // Constants
+    // Game constants
     private static final float COLLISION_THRESHOLD = 0.2f;
     private static final int COLLISION_CHECK_INTERVAL = 10; // milliseconds
     private static final int TIE_FIGHTER_MOVEMENT_INTERVAL = 10; // milliseconds
-    private static final float TIE_FIGHTER_SPEED = 15.0f;
-    private static final int MIN_ASTEROID_ANIMATION_DURATION = 4000;
-    private static final int ADDITIONAL_ASTEROID_ANIMATION_DURATION = 3000;
     private static final int EXPLOSION_ANIMATION_DURATION = 500;
+    private static final int INVULNERABILITY_DURATION = 2000; // 2 seconds
+    private static final int SCORE_INCREMENT_INTERVAL = 1000; // 1 second
 
     // Physics constants
     private static final float MIN_ASTEROID_SPEED = 8.0f;
     private static final float MAX_ASTEROID_SPEED = 12.0f;
     private static final int PHYSICS_UPDATE_INTERVAL = 16; // ~60 FPS
 
-    private final Random random = new Random();
-    // Handlers and Runnables
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    // Screen dimensions
+    // Token constants
+    private static final int MAX_POINT_TOKENS = 1;
+    private static final int TOKEN_SPAWN_INTERVAL = 2000; // 2 seconds
+    private static final int TOKEN_LIFETIME = 8000; // 8 seconds
+    private static final int TOKEN_POINTS = 20;
+
+    // Gyroscope constants
+    private static final float GYROSCOPE_SENSITIVITY = 0.05f;
+
+    // Screen properties
     private int screenWidth;
     private int screenHeight;
+
     // UI Elements
+    private ConstraintLayout mainLayout;
     private ImageView joystickPad;
     private ImageView tieFighterImageView;
     private ImageView joystickBase;
-    private ConstraintLayout mainLayout;
     private View gameOverLayout;
+    private TextView scoreTextView;
+
     // Joystick properties
     private boolean joystickIsPressed = false;
     private float joystickCenterX;
     private float joystickCenterY;
     private float maxJoystickOffset;
+
     // Game state
+    private final Random random = new Random();
     private boolean isGameActive = true;
-    private Runnable movingTieRunnable;
-    private Runnable collisionRunnable;
+    private boolean isInvulnerable = true;
+    private int currentScore = 0;
+    private int bestScore = 0;
 
-    // Asteroid array for easier management
+    // Asteroid properties
     private ImageView[] asteroids;
-
-    // Physics fields
     private AsteroidPhysics[] asteroidPhysics;
-    private Runnable physicsRunnable;
     private int asteroidCount;
     private float asteroidSpeedFactor;
     private float tieSpeed;
-    // Add these fields to the class
-    private boolean isInvulnerable = true;
-    private static final int INVULNERABILITY_DURATION = 2000; // 2 seconds
-    private int currentScore = 0;
-    private int bestScore = 0;
-    private TextView scoreTextView;
-    private final int SCORE_INCREMENT_INTERVAL = 1000; // 1 second
-    private Runnable scoreRunnable;
-    // Add these fields to the MainActivity class
+
+    // Token properties
+    private ArrayList<PointToken> pointTokens;
+
+    // Sensor properties
     private boolean useGyroscope = false;
     private SensorManager sensorManager;
     private Sensor gyroscopeSensor;
     private SensorEventListener gyroscopeEventListener;
-    private float[] rotationMatrix = new float[9];
-    private float[] orientationValues = new float[3];
     private float[] gyroscopeValues = new float[3];
-    private static final float GYROSCOPE_SENSITIVITY = 0.05f; // Adjust sensitivity
-    // Point tokens
-    private static final int MAX_POINT_TOKENS = 1;
-    private static final int TOKEN_SPAWN_INTERVAL = 2000; // 5 seconds
-    private static final int TOKEN_LIFETIME = 8000; // 8 seconds
-    private static final int TOKEN_POINTS = 20;
-    private ArrayList<PointToken> pointTokens;
+
+    // Handlers and Runnables
+    private final Handler handler = new Handler(Looper.getMainLooper());
     private Handler tokenHandler = new Handler(Looper.getMainLooper());
+    private Runnable movingTieRunnable;
+    private Runnable collisionRunnable;
+    private Runnable physicsRunnable;
+    private Runnable scoreRunnable;
     private Runnable tokenSpawnRunnable;
 
     @SuppressLint("ClickableViewAccessibility")
@@ -152,7 +147,6 @@ public class MainActivity extends AppCompatActivity {
         // Schedule end of invulnerability
         handler.postDelayed(() -> {
             isInvulnerable = false;
-            // Reset visibility to ensure the ship is fully visible
             tieFighterImageView.setAlpha(1.0f);
         }, INVULNERABILITY_DURATION);
     }
