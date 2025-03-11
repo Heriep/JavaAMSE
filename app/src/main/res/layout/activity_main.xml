@@ -20,33 +20,6 @@
         app:srcCompat="@drawable/etoilefond" />
 
     <ImageView
-        android:id="@+id/Asteroid1"
-        android:layout_width="50dp"
-        android:layout_height="50dp"
-        app:srcCompat="@drawable/asteroid1" />
-
-    <ImageView
-        android:id="@+id/Asteroid2"
-        android:layout_width="50dp"
-        android:layout_height="50dp"
-        app:srcCompat="@drawable/asteroid2"
-        tools:layout_editor_absoluteX="100dp" />
-
-    <ImageView
-        android:id="@+id/Asteroid3"
-        android:layout_width="50dp"
-        android:layout_height="50dp"
-        app:srcCompat="@drawable/asteroid3"
-        tools:layout_editor_absoluteX="211dp" />
-
-    <ImageView
-        android:id="@+id/Asteroid4"
-        android:layout_width="50dp"
-        android:layout_height="50dp"
-        app:srcCompat="@drawable/asteroid4"
-        tools:layout_editor_absoluteX="311dp" />
-
-    <ImageView
         android:id="@+id/Pad_exterior"
         android:layout_width="100dp"
         android:layout_height="100dp"

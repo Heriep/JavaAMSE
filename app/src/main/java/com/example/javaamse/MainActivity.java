@@ -34,7 +34,7 @@ import java.util.Random;
 public class MainActivity extends AppCompatActivity {
 
     // Constants
-    private static final float COLLISION_THRESHOLD = 0.3f;
+    private static final float COLLISION_THRESHOLD = 0.2f;
     private static final int COLLISION_CHECK_INTERVAL = 10; // milliseconds
     private static final int TIE_FIGHTER_MOVEMENT_INTERVAL = 10; // milliseconds
     private static final float TIE_FIGHTER_SPEED = 15.0f;
@@ -43,8 +43,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int EXPLOSION_ANIMATION_DURATION = 500;
 
     // Physics constants
-    private static final float MIN_ASTEROID_SPEED = 10.0f;
-    private static final float MAX_ASTEROID_SPEED = 20.0f;
+    private static final float MIN_ASTEROID_SPEED = 8.0f;
+    private static final float MAX_ASTEROID_SPEED = 12.0f;
     private static final int PHYSICS_UPDATE_INTERVAL = 16; // ~60 FPS
 
     private final Random random = new Random();
@@ -75,6 +75,12 @@ public class MainActivity extends AppCompatActivity {
     // Physics fields
     private AsteroidPhysics[] asteroidPhysics;
     private Runnable physicsRunnable;
+    private int asteroidCount;
+    private float asteroidSpeedFactor;
+    private float tieSpeed;
+    // Add these fields to the class
+    private boolean isInvulnerable = true;
+    private static final int INVULNERABILITY_DURATION = 2000; // 2 seconds
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -83,11 +89,28 @@ public class MainActivity extends AppCompatActivity {
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
         setupWindowInsets();
+
+        // Get parameters from LaunchActivity
+        Intent intent = getIntent();
+        asteroidCount = intent.getIntExtra("ASTEROID_COUNT", 4);
+        asteroidSpeedFactor = intent.getFloatExtra("ASTEROID_SPEED_FACTOR", 1.0f);
+        tieSpeed = intent.getFloatExtra("TIE_SPEED", 10.0f);
+
         initializeScreenDimensions();
         initializeGameElements();
         setupJoystick();
         startCollisionDetection();
-        startAsteroidPhysics(); // Replaced startAsteroidAnimations()
+        startAsteroidPhysics();
+
+        // Start invulnerability
+        startInvulnerabilityEffect();
+
+        // Schedule end of invulnerability
+        handler.postDelayed(() -> {
+            isInvulnerable = false;
+            // Reset visibility to ensure the ship is fully visible
+            tieFighterImageView.setAlpha(1.0f);
+        }, INVULNERABILITY_DURATION);
     }
 
     private void setupWindowInsets() {
@@ -113,16 +136,29 @@ public class MainActivity extends AppCompatActivity {
         tieFighterImageView = findViewById(R.id.Tie);
         joystickBase = findViewById(R.id.Pad_exterior);
 
-        // Initialize asteroid array
-        asteroids = new ImageView[4];
-        asteroids[0] = findViewById(R.id.Asteroid1);
-        asteroids[1] = findViewById(R.id.Asteroid2);
-        asteroids[2] = findViewById(R.id.Asteroid3);
-        asteroids[3] = findViewById(R.id.Asteroid4);
+        // Create asteroids programmatically
+        asteroids = new ImageView[asteroidCount];
+        for (int i = 0; i < asteroidCount; i++) {
+            ImageView asteroid = new ImageView(this);
+            int[] asteroidDrawables = {R.drawable.asteroid1, R.drawable.asteroid2, R.drawable.asteroid3, R.drawable.asteroid4};
+            asteroid.setImageResource(asteroidDrawables[random.nextInt(asteroidDrawables.length)]);
+
+            // Set size (adjust as needed)
+            int size = 100; // pixels, adjust as needed
+            ConstraintLayout.LayoutParams params = new ConstraintLayout.LayoutParams(size, size);
+            asteroid.setLayoutParams(params);
+
+            // Add to layout
+            mainLayout.addView(asteroid);
+            asteroids[i] = asteroid;
+        }
 
         // Set initial position of the Tie Fighter
         tieFighterImageView.setX(0);
         tieFighterImageView.setY(-screenHeight / 3f);
+
+        // Adjust TIE fighter speed based on seekbar value
+        final float tieSpeedAdjustment = tieSpeed / 10.0f; // Normalize to 1.0 at center value
 
         // Calculate joystick center
         joystickBase.post(() -> {
@@ -148,9 +184,9 @@ public class MainActivity extends AppCompatActivity {
                 float normalizedOffsetX = offsetX / maxJoystickOffset;
                 float normalizedOffsetY = offsetY / maxJoystickOffset;
 
-                // Calculate new position
-                float tieX = tieFighterImageView.getX() + normalizedOffsetX * TIE_FIGHTER_SPEED;
-                float tieY = tieFighterImageView.getY() + normalizedOffsetY * TIE_FIGHTER_SPEED;
+                // Calculate new position using tieSpeed from intent
+                float tieX = tieFighterImageView.getX() + normalizedOffsetX * tieSpeed;
+                float tieY = tieFighterImageView.getY() + normalizedOffsetY * tieSpeed;
 
                 // Keep within screen bounds
                 tieX = Math.max(0, Math.min(tieX, screenWidth - tieFighterImageView.getWidth()));
@@ -197,11 +233,14 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 if (!isGameActive) return;
 
-                // Check collisions with all asteroids
-                for (ImageView asteroid : asteroids) {
-                    if (isCollision(tieFighterImageView, asteroid, COLLISION_THRESHOLD)) {
-                        handleCollision();
-                        return;
+                // Only check collisions if not invulnerable
+                if (!isInvulnerable) {
+                    // Check collisions with all asteroids
+                    for (ImageView asteroid : asteroids) {
+                        if (isCollision(tieFighterImageView, asteroid, COLLISION_THRESHOLD)) {
+                            handleCollision();
+                            return;
+                        }
                     }
                 }
 
@@ -212,6 +251,27 @@ public class MainActivity extends AppCompatActivity {
             }
         };
         handler.post(collisionRunnable);
+    }
+    private void startInvulnerabilityEffect() {
+        final int blinkInterval = 200; // milliseconds
+        final Runnable blinkRunnable = new Runnable() {
+            boolean visible = true;
+            @Override
+            public void run() {
+                if (!isGameActive) return;
+
+                if (isInvulnerable) {
+                    visible = !visible;
+                    tieFighterImageView.setAlpha(visible ? 1.0f : 0.3f);
+                    handler.postDelayed(this, blinkInterval);
+                } else {
+                    // Ensure visibility when invulnerability ends
+                    tieFighterImageView.setAlpha(1.0f);
+                }
+            }
+        };
+
+        handler.post(blinkRunnable);
     }
 
     private void moveJoystickPad(MotionEvent event) {
@@ -236,23 +296,61 @@ public class MainActivity extends AppCompatActivity {
     // New physics-based asteroid methods
 
     private void initializeAsteroidPhysics() {
+        // Get the initial TIE fighter position
+        float tieFighterX = tieFighterImageView.getX();
+        float tieFighterY = tieFighterImageView.getY();
+        float safeZoneRadius = 200.0f; // Size of safe zone around player's spawn
+
         asteroidPhysics = new AsteroidPhysics[asteroids.length];
         for (int i = 0; i < asteroids.length; i++) {
             float radius = asteroids[i].getWidth() / 2f;
-            float randomVelocityX = getRandomVelocity();
-            float randomVelocityY = getRandomVelocity();
+            float randomVelocityX = getRandomVelocity() * asteroidSpeedFactor;
+            float randomVelocityY = getRandomVelocity() * asteroidSpeedFactor;
             asteroidPhysics[i] = new AsteroidPhysics(randomVelocityX, randomVelocityY, radius);
         }
 
-        // Set initial positions
-        asteroids[0].setX(screenWidth * 0.15f);
-        asteroids[0].setY(screenHeight * 0.6f);
-        asteroids[1].setX(screenWidth * 0.65f);
-        asteroids[1].setY(screenHeight * 0.6f);
-        asteroids[2].setX(screenWidth * 0.25f);
-        asteroids[2].setY(screenHeight * 0.8f);
-        asteroids[3].setX(screenWidth * 0.75f);
-        asteroids[3].setY(screenHeight * 0.8f);
+        // Set initial positions - distribute randomly around the screen
+        for (int i = 0; i < asteroids.length; i++) {
+            float x, y;
+            boolean validPosition;
+            int attempts = 0;
+            do {
+                x = random.nextFloat() * (screenWidth - 2 * asteroids[i].getWidth()) + asteroids[i].getWidth();
+                y = random.nextFloat() * (screenHeight - 2 * asteroids[i].getHeight()) + asteroids[i].getHeight();
+                validPosition = true;
+
+                // Ensure asteroids do not spawn too close to each other
+                for (int j = 0; j < i; j++) {
+                    float otherX = asteroids[j].getX();
+                    float otherY = asteroids[j].getY();
+                    float distance = (float) Math.sqrt(Math.pow(x - otherX, 2) + Math.pow(y - otherY, 2));
+                    if (distance < asteroids[i].getWidth() * 2) {
+                        validPosition = false;
+                        break;
+                    }
+                }
+
+                // Ensure asteroids do not spawn too close to the TIE fighter
+                float distanceToTie = (float) Math.sqrt(Math.pow(x - tieFighterX, 2) +
+                        Math.pow(y - tieFighterY, 2));
+                if (distanceToTie < safeZoneRadius) {
+                    validPosition = false;
+                }
+
+                attempts++;
+                // Prevent infinite loop
+                if (attempts > 100) {
+                    // If we can't find a suitable position after many attempts,
+                    // just place it somewhere away from the TIE fighter
+                    x = (tieFighterX < screenWidth/2) ? screenWidth - 200 : 200;
+                    y = (tieFighterY < screenHeight/2) ? screenHeight - 200 : 200;
+                    validPosition = true;
+                }
+            } while (!validPosition);
+
+            asteroids[i].setX(x);
+            asteroids[i].setY(y);
+        }
     }
 
     private float getRandomVelocity() {
@@ -286,11 +384,20 @@ public class MainActivity extends AppCompatActivity {
             ImageView asteroid = asteroids[i];
             AsteroidPhysics physics = asteroidPhysics[i];
 
+            // Update position
             float newX = asteroid.getX() + physics.velocityX;
             float newY = asteroid.getY() + physics.velocityY;
-
             asteroid.setX(newX);
             asteroid.setY(newY);
+
+            // Update rotation
+            physics.rotationAngle += physics.rotationSpeed;
+            if (physics.rotationAngle > 360) {
+                physics.rotationAngle -= 360;
+            } else if (physics.rotationAngle < 0) {
+                physics.rotationAngle += 360;
+            }
+            asteroid.setRotation(physics.rotationAngle);
         }
     }
 
@@ -338,19 +445,8 @@ public class MainActivity extends AppCompatActivity {
                 AsteroidPhysics physics1 = asteroidPhysics[i];
                 AsteroidPhysics physics2 = asteroidPhysics[j];
 
-                // Calculate centers
-                float center1X = asteroid1.getX() + asteroid1.getWidth() / 2f;
-                float center1Y = asteroid1.getY() + asteroid1.getHeight() / 2f;
-                float center2X = asteroid2.getX() + asteroid2.getWidth() / 2f;
-                float center2Y = asteroid2.getY() + asteroid2.getHeight() / 2f;
-
-                // Calculate distance between centers
-                float distanceX = center2X - center1X;
-                float distanceY = center2Y - center1Y;
-                float distance = (float) Math.sqrt(distanceX * distanceX + distanceY * distanceY);
-
-                // Check if collision occurred
-                if (distance < (physics1.radius + physics2.radius)) {
+                // Use the same collision detection as the TIE fighter
+                if (isCollision(asteroid1, asteroid2, COLLISION_THRESHOLD)) {
                     // Exchange velocities (simplified physics)
                     float tempVelocityX = physics1.velocityX;
                     float tempVelocityY = physics1.velocityY;
@@ -359,10 +455,15 @@ public class MainActivity extends AppCompatActivity {
                     physics2.velocityX = tempVelocityX;
                     physics2.velocityY = tempVelocityY;
 
+                    // Add a bit of randomness to prevent repetitive patterns
+                    physics1.velocityX *= 0.95f + random.nextFloat() * 0.1f;
+                    physics1.velocityY *= 0.95f + random.nextFloat() * 0.1f;
+                    physics2.velocityX *= 0.95f + random.nextFloat() * 0.1f;
+                    physics2.velocityY *= 0.95f + random.nextFloat() * 0.1f;
+
                     // Separate asteroids to prevent sticking
-                    float overlap = (physics1.radius + physics2.radius) - distance;
-                    float separationX = (overlap * distanceX / distance) / 2f;
-                    float separationY = (overlap * distanceY / distance) / 2f;
+                    float separationX = (asteroid2.getX() > asteroid1.getX()) ? 2.0f : -2.0f;
+                    float separationY = (asteroid2.getY() > asteroid1.getY()) ? 2.0f : -2.0f;
 
                     asteroid1.setX(asteroid1.getX() - separationX);
                     asteroid1.setY(asteroid1.getY() - separationY);
@@ -375,28 +476,27 @@ public class MainActivity extends AppCompatActivity {
 
     // Keep existing methods
 
-    private boolean isCollision(ImageView tieFighter, ImageView asteroid, float collisionThresholdPercentage) {
-        // Get bounding rectangles
-        Rect tieRect = getImageViewRect(tieFighter);
-        Rect asteroidRect = getImageViewRect(asteroid);
+    private boolean isCollision(ImageView object1, ImageView object2, float collisionThresholdPercentage) {
+        // Get center points
+        float obj1CenterX = object1.getX() + object1.getWidth() / 2f;
+        float obj1CenterY = object1.getY() + object1.getHeight() / 2f;
+        float obj2CenterX = object2.getX() + object2.getWidth() / 2f;
+        float obj2CenterY = object2.getY() + object2.getHeight() / 2f;
 
-        // Check for rectangle intersection
-        if (!Rect.intersects(tieRect, asteroidRect)) {
-            return false;
-        }
+        // Calculate distance between centers
+        float deltaX = obj1CenterX - obj2CenterX;
+        float deltaY = obj1CenterY - obj2CenterY;
+        float distance = (float) Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-        // Calculate intersection area
-        Rect intersection = new Rect(Math.max(tieRect.left, asteroidRect.left),
-                Math.max(tieRect.top, asteroidRect.top),
-                Math.min(tieRect.right, asteroidRect.right),
-                Math.min(tieRect.bottom, asteroidRect.bottom));
+        // Calculate collision radius (average of width and height divided by 2)
+        float obj1Radius = (object1.getWidth() + object1.getHeight()) / 4f;
+        float obj2Radius = (object2.getWidth() + object2.getHeight()) / 4f;
 
-        int intersectionArea = intersection.width() * intersection.height();
-        int smallerObjectArea = Math.min(tieRect.width() * tieRect.height(),
-                asteroidRect.width() * asteroidRect.height());
-        int thresholdArea = (int) (smallerObjectArea * collisionThresholdPercentage);
+        // Apply threshold adjustment
+        float collisionDistance = (obj1Radius + obj2Radius) * (1 - collisionThresholdPercentage * 0.5f);
 
-        return intersectionArea >= thresholdArea;
+        // Check if distance is less than the collision distance
+        return distance < collisionDistance;
     }
 
     private Rect getImageViewRect(ImageView imageView) {
@@ -488,11 +588,15 @@ public class MainActivity extends AppCompatActivity {
         public float velocityX;
         public float velocityY;
         public float radius;
+        public float rotationAngle;
+        public float rotationSpeed;
 
         public AsteroidPhysics(float velocityX, float velocityY, float radius) {
             this.velocityX = velocityX;
             this.velocityY = velocityY;
             this.radius = radius;
+            this.rotationAngle = 0f;
+            this.rotationSpeed = (float) (Math.random() * 6.0 - 3.0); // Random rotation between -3 and 3 degrees per frame
         }
     }
 }
