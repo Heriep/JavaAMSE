@@ -40,6 +40,8 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.content.Context;
 
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
@@ -106,6 +108,14 @@ public class MainActivity extends AppCompatActivity {
     private float[] orientationValues = new float[3];
     private float[] gyroscopeValues = new float[3];
     private static final float GYROSCOPE_SENSITIVITY = 0.05f; // Adjust sensitivity
+    // Point tokens
+    private static final int MAX_POINT_TOKENS = 1;
+    private static final int TOKEN_SPAWN_INTERVAL = 2000; // 5 seconds
+    private static final int TOKEN_LIFETIME = 8000; // 8 seconds
+    private static final int TOKEN_POINTS = 20;
+    private ArrayList<PointToken> pointTokens;
+    private Handler tokenHandler = new Handler(Looper.getMainLooper());
+    private Runnable tokenSpawnRunnable;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -126,6 +136,9 @@ public class MainActivity extends AppCompatActivity {
         if (useGyroscope) {
             initializeGyroscope();
         }
+
+        // Initialize point tokens system
+        initializePointTokens();
 
         initializeScreenDimensions();
         initializeGameElements();
@@ -224,6 +237,186 @@ public class MainActivity extends AppCompatActivity {
             return insets;
         });
     }
+    private void initializePointTokens() {
+        pointTokens = new ArrayList<>();
+
+        // Start spawning tokens
+        tokenSpawnRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!isGameActive) return;
+
+                // Only spawn if we're below the maximum
+                if (pointTokens.size() < MAX_POINT_TOKENS) {
+                    spawnPointToken();
+                }
+
+                // Schedule next spawn
+                if (isGameActive) {
+                    tokenHandler.postDelayed(this, TOKEN_SPAWN_INTERVAL);
+                }
+            }
+        };
+
+        tokenHandler.postDelayed(tokenSpawnRunnable, TOKEN_SPAWN_INTERVAL);
+    }
+    private void spawnPointToken() {
+        // Create token ImageView
+        ImageView tokenView = new ImageView(this);
+        tokenView.setImageResource(R.drawable.point_token); // You'll need to add this drawable
+
+        // Set size (50dp x 50dp)
+        int size = dpToPx(50);
+        ConstraintLayout.LayoutParams params = new ConstraintLayout.LayoutParams(size, size);
+        tokenView.setLayoutParams(params);
+
+        // Find a safe position (away from ship and asteroids)
+        float tokenX, tokenY;
+        boolean validPosition;
+        int attempts = 0;
+
+        do {
+            tokenX = random.nextFloat() * (screenWidth - size);
+            tokenY = random.nextFloat() * (screenHeight - size);
+            validPosition = true;
+
+            // Check distance from TIE fighter
+            float distToShip = calculateDistance(
+                    tokenX + size/2, tokenY + size/2,
+                    tieFighterImageView.getX() + tieFighterImageView.getWidth()/2,
+                    tieFighterImageView.getY() + tieFighterImageView.getHeight()/2
+            );
+
+            if (distToShip < 200) {
+                validPosition = false;
+            }
+
+            // Check distance from all asteroids
+            if (validPosition) {
+                for (ImageView asteroid : asteroids) {
+                    float distToAsteroid = calculateDistance(
+                            tokenX + size/2, tokenY + size/2,
+                            asteroid.getX() + asteroid.getWidth()/2,
+                            asteroid.getY() + asteroid.getHeight()/2
+                    );
+
+                    if (distToAsteroid < 150) {
+                        validPosition = false;
+                        break;
+                    }
+                }
+            }
+
+            attempts++;
+        } while (!validPosition && attempts < 50);
+
+        // If we couldn't find a good spot after many attempts, just pick one
+        if (!validPosition) {
+            tokenX = random.nextFloat() * (screenWidth - size);
+            tokenY = random.nextFloat() * (screenHeight - size);
+        }
+
+        // Set position
+        tokenView.setX(tokenX);
+        tokenView.setY(tokenY);
+
+        // Add to layout
+        mainLayout.addView(tokenView);
+
+        // Create token object
+        PointToken token = new PointToken(tokenView, TOKEN_POINTS);
+        pointTokens.add(token);
+
+        // Create pulsating animation
+        ObjectAnimator scaleX = ObjectAnimator.ofFloat(tokenView, "scaleX", 0.8f, 1.2f);
+        ObjectAnimator scaleY = ObjectAnimator.ofFloat(tokenView, "scaleY", 0.8f, 1.2f);
+        scaleX.setRepeatMode(ValueAnimator.REVERSE);
+        scaleY.setRepeatMode(ValueAnimator.REVERSE);
+        scaleX.setRepeatCount(ValueAnimator.INFINITE);
+        scaleY.setRepeatCount(ValueAnimator.INFINITE);
+        scaleX.setDuration(800);
+        scaleY.setDuration(800);
+        scaleX.start();
+        scaleY.start();
+
+        // Auto-remove after lifetime
+        tokenHandler.postDelayed(() -> {
+            if (isGameActive && token.isActive) {
+                removePointToken(token);
+            }
+        }, TOKEN_LIFETIME);
+    }
+    private void checkTokenCollisions() {
+        if (!isGameActive) return;
+
+        Iterator<PointToken> iterator = pointTokens.iterator();
+        while (iterator.hasNext()) {
+            PointToken token = iterator.next();
+            if (token.isActive && isCollision(tieFighterImageView, token.imageView, COLLISION_THRESHOLD)) {
+                collectToken(token);
+            }
+        }
+    }
+
+    private void collectToken(PointToken token) {
+        // Update score
+        currentScore += token.value;
+        scoreTextView.setText("Score: " + currentScore);
+
+        // Show collection animation
+        showTokenCollectEffect(token);
+
+        // Remove token
+        token.isActive = false;
+        removePointToken(token);
+    }
+
+    private void removePointToken(PointToken token) {
+        mainLayout.removeView(token.imageView);
+        pointTokens.remove(token);
+    }
+
+    private void showTokenCollectEffect(PointToken token) {
+        // Create score popup text
+        TextView scorePopup = new TextView(this);
+        scorePopup.setText("+" + token.value);
+        scorePopup.setTextColor(Color.YELLOW);
+        scorePopup.setTextSize(20);
+
+        ConstraintLayout.LayoutParams params = new ConstraintLayout.LayoutParams(
+                ConstraintLayout.LayoutParams.WRAP_CONTENT,
+                ConstraintLayout.LayoutParams.WRAP_CONTENT
+        );
+        scorePopup.setLayoutParams(params);
+
+        // Position at token location
+        scorePopup.setX(token.imageView.getX());
+        scorePopup.setY(token.imageView.getY());
+
+        mainLayout.addView(scorePopup);
+
+        // Animate floating up and fading
+        ObjectAnimator moveUp = ObjectAnimator.ofFloat(scorePopup, "translationY",
+                scorePopup.getTranslationY(), scorePopup.getTranslationY() - 100);
+        ObjectAnimator fadeOut = ObjectAnimator.ofFloat(scorePopup, "alpha", 1f, 0f);
+
+        moveUp.setDuration(700);
+        fadeOut.setDuration(700);
+
+        moveUp.start();
+        fadeOut.start();
+
+        // Remove after animation
+        handler.postDelayed(() -> mainLayout.removeView(scorePopup), 700);
+    }
+
+    private float calculateDistance(float x1, float y1, float x2, float y2) {
+        return (float) Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    }
+
+    private int dpToPx(int dp) {
+        return (int) (dp * getResources().getDisplayMetrics().density);
+    }
 
     private void initializeScreenDimensions() {
         DisplayMetrics displayMetrics = new DisplayMetrics();
@@ -247,8 +440,8 @@ public class MainActivity extends AppCompatActivity {
             int[] asteroidDrawables = {R.drawable.asteroid1, R.drawable.asteroid2, R.drawable.asteroid3, R.drawable.asteroid4};
             asteroid.setImageResource(asteroidDrawables[random.nextInt(asteroidDrawables.length)]);
 
-            // Set size (adjust as needed)
-            int size = 100; // pixels, adjust as needed
+            // Set size (adjust as needed)can you clean the code ?
+            int size = 120; // pixels, adjust as needed
             ConstraintLayout.LayoutParams params = new ConstraintLayout.LayoutParams(size, size);
             asteroid.setLayoutParams(params);
 
@@ -559,6 +752,7 @@ public class MainActivity extends AppCompatActivity {
                 updateAsteroidPositions();
                 checkAsteroidBoundaryCollisions();
                 checkAsteroidCollisions();
+                checkTokenCollisions(); // Add this line
 
                 if (isGameActive) {
                     handler.postDelayed(this, PHYSICS_UPDATE_INTERVAL);
@@ -710,6 +904,9 @@ public class MainActivity extends AppCompatActivity {
         handler.removeCallbacks(collisionRunnable);
         handler.removeCallbacks(physicsRunnable);
 
+        // Clean up token handler
+        tokenHandler.removeCallbacks(tokenSpawnRunnable);
+
         // Display explosion
         displayExplosion(tieFighterImageView);
 
@@ -813,6 +1010,18 @@ public class MainActivity extends AppCompatActivity {
             this.radius = radius;
             this.rotationAngle = 0f;
             this.rotationSpeed = (float) (Math.random() * 6.0 - 3.0); // Random rotation between -3 and 3 degrees per frame
+        }
+    }
+
+    private static class PointToken {
+        public ImageView imageView;
+        public int value;
+        public boolean isActive;
+
+        public PointToken(ImageView imageView, int value) {
+            this.imageView = imageView;
+            this.value = value;
+            this.isActive = true;
         }
     }
 }
